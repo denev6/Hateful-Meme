@@ -1,0 +1,15 @@
+archive.zip
+checkpoint
+data/img
+data/resized
+model/*
+outputs/
+wandb/
+*.h5
+*.pth
+.env
+
+__pycache__
+.ruff_cache
+.vscode
+.idea
