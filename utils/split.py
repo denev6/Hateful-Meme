@@ -3,7 +3,7 @@ import random
 
 input_file = "data/all_train.jsonl"
 train_output = "data/train.jsonl"
-val_output = "data/val.jsonl"
+val_output = "data/test.jsonl"
 split_ratio = 0.8
 
 data = []

@@ -9,11 +9,12 @@ from tqdm import tqdm
 import wandb
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 import hydra
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import os
 from dotenv import load_dotenv
 
-from model import CLIPFusionNetwork, MLPClassifier
+from model import CLIPFusionNetwork
 import utils
 
 
@@ -38,11 +39,11 @@ def train(config: DictConfig):
         val_dataset, batch_size=config.train.batch, shuffle=False, num_workers=4
     )
 
-    model = MLPClassifier(hidden_dim=config.model.hidden_dim).to(device)
+    model = instantiate(config.model).to(device)
     processor = CLIPFusionNetwork().to(device)
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(
+    optimizer = optim.AdamW(
         model.parameters(), lr=config.train.lr, weight_decay=config.train.decay
     )
     scaler = GradScaler(device=str(device), enabled=config.train.use_fp16)
@@ -54,7 +55,7 @@ def train(config: DictConfig):
         num_training_steps=total_steps,
     )
 
-    best_val_loss = float("inf")
+    best_val_acc = 0
     os.makedirs("checkpoint", exist_ok=True)
 
     for epoch in range(config.train.epoch):
@@ -115,8 +116,8 @@ def train(config: DictConfig):
         )
 
         # Checkpoint Saving
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
             torch.save(model.state_dict(), "checkpoint/best_model.pth")
 
 
@@ -170,24 +171,24 @@ def evaluate(config: DictConfig):
     test_loader = DataLoader(
         test_dataset, batch_size=config.train.batch, shuffle=False, num_workers=4
     )
-    model = MLPClassifier(hidden_dim=config.model.hidden_dim).to(device)
+    model = instantiate(config.model).to(device)
+    state_dict = torch.load("checkpoint/best_model.pth", map_location=device)
+    model.load_state_dict(state_dict)
+    model.eval()
+
     processor = CLIPFusionNetwork().to(device)
 
     all_preds = []
     all_labels = []
     all_probs = []
 
-    model.eval()
-    for batch in test_loader:
+    for batch in tqdm(test_loader):
         images = batch["pixel_values"]
         labels = batch["label"].float().to(device).unsqueeze(1)
         texts = batch["text"]
 
         text_features, image_features = processor(texts=texts, images=images)
-        with autocast(
-            device_type=str(device), enabled=config.train.use_fp16, dtype=torch.float16
-        ):
-            logits = model(text_features, image_features)
+        logits = model(text_features.float(), image_features.float())
 
         probs = torch.sigmoid(logits).cpu().numpy()
         preds = probs > 0.5
@@ -208,14 +209,15 @@ def main(config: DictConfig):
     load_dotenv()
     utils.ignore_warnings()
     utils.fix_random_seed(config.train.seed)
-
     utils.init_wandb(
         name=os.getenv("WANDB_PROJECT"),
         configs=OmegaConf.to_container(config, resolve=True, throw_on_missing=True),
     )
 
     train(config=config)
+
     metrics = evaluate(config=config)
+    print(metrics)
     wandb.log(metrics)
 
     wandb.finish()

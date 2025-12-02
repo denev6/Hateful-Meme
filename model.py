@@ -52,5 +52,70 @@ class MLPClassifier(nn.Module):
 
     def forward(self, text_features, image_features):
         features = torch.concat([text_features, image_features], dim=1)
+        # features = text_features * image_features # --> HateCLIPper
         output = self.mlp(features)
+        return output
+
+
+class CrossModalAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads=4, dropout=0.1):
+        super().__init__()
+        self.multihead_attn = nn.MultiheadAttention(
+            embed_dim=embed_dim, num_heads=num_heads, batch_first=True
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
+
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 4, embed_dim),
+        )
+        self.norm_ffn = nn.LayerNorm(embed_dim)
+
+    def forward(self, query, key_value):
+        attn_output, _ = self.multihead_attn(query, key_value, key_value)
+        x = self.norm(query + self.dropout(attn_output))
+        ffn_output = self.ffn(x)
+        x = self.norm_ffn(x + self.dropout(ffn_output))
+        return x
+
+
+class CrossAttentionClassifier(nn.Module):
+    def __init__(self, hidden_dim, num_heads=4, dropout=0.3):
+        super().__init__()
+
+        self.proj_text = nn.Sequential(
+            nn.Linear(512, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
+        )
+        self.proj_image = nn.Sequential(
+            nn.Linear(512, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
+        )
+
+        self.attn_text = CrossModalAttention(hidden_dim, num_heads, dropout)
+        self.attn_image = CrossModalAttention(hidden_dim, num_heads, dropout)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, text, image):
+        feat_text = self.proj_text(text).unsqueeze(1)
+        feat_image = self.proj_image(image).unsqueeze(1)
+
+        # Cross Attention
+        feat_text_enhanced = self.attn_text(feat_text, feat_image)
+        feat_image_enhanced = self.attn_image(feat_image, feat_text)
+
+        # Squeeze & Concat
+        feat_text_enhanced = feat_text_enhanced.squeeze(1)
+        feat_image_enhanced = feat_image_enhanced.squeeze(1)
+
+        combined = torch.cat([feat_text_enhanced, feat_image_enhanced], dim=1)
+
+        output = self.classifier(combined)
         return output

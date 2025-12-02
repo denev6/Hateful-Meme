@@ -1,4 +1,5 @@
 model:
+  _target_: model.MLPClassifier
   hidden_dim: 512
   dropout: 0.5
 
@@ -7,6 +8,5 @@ train:
   lr: 1e-3
   decay: 1e-3
   epoch: 100
-  batch: 16
+  batch: 64
   use_fp16: true
-  dropout: 0.5
