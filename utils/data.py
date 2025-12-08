@@ -1,4 +1,5 @@
 import multiprocessing
+from itertools import repeat
 import h5py
 import json
 import numpy as np
@@ -11,15 +12,14 @@ import torch
 from torch.utils.data import Dataset
 
 DATA_DIR = "data/img"
-IMG_SIZE = 224
 
 
-def process_single_image(img_path):
+def process_single_image(img_path, img_size):
     try:
         transform = transforms.Compose(
             [
                 transforms.Resize(
-                    (IMG_SIZE, IMG_SIZE),
+                    (img_size, img_size),
                     interpolation=transforms.InterpolationMode.BICUBIC,
                 )
             ]
@@ -37,7 +37,7 @@ def process_single_image(img_path):
         return None
 
 
-def preprocess(json_path, save_path):
+def preprocess(json_path, save_path, img_size):
     valid_ids = set()
     with open(json_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -57,12 +57,14 @@ def preprocess(json_path, save_path):
 
     with h5py.File(save_path, "w") as f:
         dset_imgs = f.create_dataset(
-            "images", (total_imgs, 3, IMG_SIZE, IMG_SIZE), dtype="uint8"
+            "images", (total_imgs, 3, img_size, img_size), dtype="uint8"
         )
         dset_ids = f.create_dataset("ids", (total_imgs,), dtype=int)
 
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            results = executor.map(process_single_image, image_paths, chunksize=32)
+            results = executor.map(
+                process_single_image, image_paths, repeat(img_size), chunksize=32
+            )
 
             valid_idx = 0
             for result in tqdm(results, total=total_imgs):
@@ -73,15 +75,15 @@ def preprocess(json_path, save_path):
                     valid_idx += 1
 
             if valid_idx < total_imgs:
-                dset_imgs.resize((valid_idx, 3, IMG_SIZE, IMG_SIZE))
+                dset_imgs.resize((valid_idx, 3, img_size, img_size))
                 dset_ids.resize((valid_idx,))
 
     print(f"Saved {valid_idx} images to {save_path}")
 
 
-def run_preprocess():
+def run_preprocess(img_size):
     for split in ["train", "val", "test"]:
-        preprocess(f"data/{split}.jsonl", f"data/resized/{split}.h5")
+        preprocess(f"data/{split}.jsonl", f"data/resized/{split}.h5", img_size)
 
 
 class HatefulMemeDataset(Dataset):
@@ -145,7 +147,7 @@ class HatefulMemeDataset(Dataset):
 
 if __name__ == "__main__":
     # Preprocess
-    # run_preprocess()
+    run_preprocess(img_size=336)
 
     # Visualization
     import matplotlib.pyplot as plt
@@ -159,7 +161,7 @@ if __name__ == "__main__":
     idx = 0
     sample = dataset[idx]
 
-    pixel_values = sample["pixel_values"]  # Tensor (3, 224, 224)
+    pixel_values = sample["pixel_values"]  # Tensor (3, w, h)
     text = sample["text"]
     label = sample["label"]
 

@@ -3,8 +3,8 @@ import torch.nn as nn
 from transformers import CLIPModel, CLIPProcessor
 
 
-class CLIPFusionNetwork(nn.Module):
-    def __init__(self, model_id="model/clip-vit-base-patch32"):
+class CLIPNetwork(nn.Module):
+    def __init__(self, model_id="model/clip-vit-large-patch14-336"):
         super().__init__()
 
         self._clip = CLIPModel.from_pretrained(model_id, dtype=torch.float16)
@@ -40,7 +40,7 @@ class CLIPFusionNetwork(nn.Module):
 
 
 class MLPClassifier(nn.Module):
-    def __init__(self, hidden_dim, input_dim=1024, output_dim=1, dropout=0.3):
+    def __init__(self, hidden_dim, input_dim=1536, output_dim=1, dropout=0.3):
         super().__init__()
 
         self.mlp = nn.Sequential(
@@ -83,14 +83,14 @@ class CrossModalAttention(nn.Module):
 
 
 class CrossAttentionClassifier(nn.Module):
-    def __init__(self, hidden_dim, num_heads=4, dropout=0.3):
+    def __init__(self, hidden_dim, input_dim=768, num_heads=4, dropout=0.3):
         super().__init__()
 
         self.proj_text = nn.Sequential(
-            nn.Linear(512, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
+            nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
         )
         self.proj_image = nn.Sequential(
-            nn.Linear(512, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
+            nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
         )
 
         self.attn_text = CrossModalAttention(hidden_dim, num_heads, dropout)
@@ -119,3 +119,55 @@ class CrossAttentionClassifier(nn.Module):
 
         output = self.classifier(combined)
         return output
+
+
+class TRMBlock(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        # 입력 차원: x(원본 특징) + y(현재 예측 Logits) + z(잠재 상태)
+        total_input_dim = input_dim + output_dim + hidden_dim
+
+        self.net = nn.Sequential(
+            nn.Linear(total_input_dim, hidden_dim * 2),
+            nn.LayerNorm(hidden_dim * 2),
+            nn.SiLU(),
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.to_y = nn.Linear(hidden_dim, output_dim)
+        self.to_z = nn.Linear(hidden_dim, hidden_dim)
+
+    def forward(self, x, y, z):
+        combined = torch.cat([x, y, z], dim=-1)
+        features = self.net(combined)
+        z_next = z + self.to_z(features)
+        y_next = self.to_y(features)
+
+        return y_next, z_next
+
+
+class MemeTRM(nn.Module):
+    def __init__(self, input_dim, hidden_dim=256, output_dim=1, num_loops=3):
+        super().__init__()
+        self.num_loops = num_loops
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+
+        self.input_proj = nn.Linear(input_dim, input_dim)
+        self.block = TRMBlock(input_dim, hidden_dim, output_dim)
+
+    def forward(self, fused_features):
+        batch_size = fused_features.size(0)
+        device = fused_features.device
+
+        x = self.input_proj(fused_features)
+        y = torch.zeros(batch_size, self.output_dim).to(device)
+        z = torch.zeros(batch_size, self.hidden_dim).to(device)
+
+        all_preds = []
+
+        for _ in range(self.num_loops):
+            y, z = self.block(x, y, z)
+            all_preds.append(y)
+
+        return torch.stack(all_preds, dim=1)

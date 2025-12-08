@@ -1,12 +1,13 @@
 model:
   _target_: model.MLPClassifier
-  hidden_dim: 512
+  hidden_dim: 128
+  input_dim: 1536
   dropout: 0.5
 
 train:
   seed: 42
   lr: 1e-3
-  decay: 1e-3
-  epoch: 100
+  decay: 1e-5
+  epoch: 50
   batch: 64
   use_fp16: true

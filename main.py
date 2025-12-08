@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 import os
 from dotenv import load_dotenv
 
-from model import CLIPFusionNetwork
+from model import CLIPNetwork
 import utils
 
 
@@ -40,7 +40,7 @@ def train(config: DictConfig):
     )
 
     model = instantiate(config.model).to(device)
-    processor = CLIPFusionNetwork().to(device)
+    processor = CLIPNetwork().to(device)
 
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.AdamW(
@@ -176,7 +176,7 @@ def evaluate(config: DictConfig):
     model.load_state_dict(state_dict)
     model.eval()
 
-    processor = CLIPFusionNetwork().to(device)
+    processor = CLIPNetwork().to(device)
 
     all_preds = []
     all_labels = []

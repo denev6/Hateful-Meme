@@ -1,8 +1,9 @@
 from transformers import CLIPModel, CLIPProcessor
 import os
 
-model_id = "openai/clip-vit-base-patch32"
-save_directory = "model/clip-vit-base-patch32"
+# "clip-vit-base-patch32" or "clip-vit-large-patch14-336"
+model_id = "openai/clip-vit-large-patch14-336"
+save_directory = "model/clip-vit-large-patch14-336"
 
 os.makedirs(save_directory, exist_ok=True)
 
