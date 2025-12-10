@@ -58,7 +58,7 @@ class MLPClassifier(nn.Module):
 
 
 class CrossModalAttention(nn.Module):
-    def __init__(self, embed_dim, num_heads=4, dropout=0.1):
+    def __init__(self, embed_dim, num_heads=4, dropout=0.5):
         super().__init__()
         self.multihead_attn = nn.MultiheadAttention(
             embed_dim=embed_dim, num_heads=num_heads, batch_first=True
@@ -67,10 +67,10 @@ class CrossModalAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 4),
+            nn.Linear(embed_dim, embed_dim * 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(embed_dim * 4, embed_dim),
+            nn.Linear(embed_dim * 2, embed_dim),
         )
         self.norm_ffn = nn.LayerNorm(embed_dim)
 
@@ -83,7 +83,7 @@ class CrossModalAttention(nn.Module):
 
 
 class CrossAttentionClassifier(nn.Module):
-    def __init__(self, hidden_dim, input_dim=768, num_heads=4, dropout=0.3):
+    def __init__(self, hidden_dim, input_dim=768, num_heads=4, dropout=0.5):
         super().__init__()
 
         self.proj_text = nn.Sequential(
@@ -93,9 +93,18 @@ class CrossAttentionClassifier(nn.Module):
             nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.LayerNorm(hidden_dim)
         )
 
-        self.attn_text = CrossModalAttention(hidden_dim, num_heads, dropout)
-        self.attn_image = CrossModalAttention(hidden_dim, num_heads, dropout)
+        # Self-Attention Layers
+        self.sa_text = CrossModalAttention(hidden_dim, num_heads, dropout)
+        self.sa_image = CrossModalAttention(hidden_dim, num_heads, dropout)
 
+        # Cross-Attention Layers
+        self.ca_text_1 = CrossModalAttention(hidden_dim, num_heads, dropout)
+        self.ca_image_1 = CrossModalAttention(hidden_dim, num_heads, dropout)
+
+        self.ca_text_2 = CrossModalAttention(hidden_dim, num_heads, dropout)
+        self.ca_image_2 = CrossModalAttention(hidden_dim, num_heads, dropout)
+
+        # Classifier
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
@@ -107,15 +116,19 @@ class CrossAttentionClassifier(nn.Module):
         feat_text = self.proj_text(text).unsqueeze(1)
         feat_image = self.proj_image(image).unsqueeze(1)
 
-        # Cross Attention
-        feat_text_enhanced = self.attn_text(feat_text, feat_image)
-        feat_image_enhanced = self.attn_image(feat_image, feat_text)
+        feat_text = self.sa_text(feat_text, feat_text)
+        feat_image = self.sa_image(feat_image, feat_image)
 
-        # Squeeze & Concat
-        feat_text_enhanced = feat_text_enhanced.squeeze(1)
-        feat_image_enhanced = feat_image_enhanced.squeeze(1)
+        feat_text_step1 = self.ca_text_1(feat_text, feat_image)
+        feat_image_step1 = self.ca_image_1(feat_image, feat_text)
 
-        combined = torch.cat([feat_text_enhanced, feat_image_enhanced], dim=1)
+        feat_text_step2 = self.ca_text_2(feat_text_step1, feat_image_step1)
+        feat_image_step2 = self.ca_image_2(feat_image_step1, feat_text_step1)
+
+        feat_text_final = feat_text_step2.squeeze(1)
+        feat_image_final = feat_image_step2.squeeze(1)
+
+        combined = torch.cat([feat_text_final, feat_image_final], dim=1)
 
         output = self.classifier(combined)
         return output

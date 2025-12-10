@@ -1,0 +1,14 @@
+model:
+  hidden_size: 512
+  expansion: 4.0
+  layers: 2
+
+train:
+  seed: 42
+  batch: 64
+  epoch: 50
+  lr: 1e-5
+  decay: 1e-5
+  n_supervision: 16
+  recursion_n: 6
+  recursion_t: 3
