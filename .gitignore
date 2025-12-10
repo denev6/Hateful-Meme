@@ -3,6 +3,7 @@ checkpoint
 data/img
 data/resized
 model/*
+trm
 outputs/
 wandb/
 *.h5

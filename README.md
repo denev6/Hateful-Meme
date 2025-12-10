@@ -9,5 +9,5 @@ The training set was split into training and test sets with an 8:2 ratio since t
 ## Run
 
 ```sh
-python main.py --config-name ca
+python train_trm.py --config-name trm
 ```

@@ -6,8 +6,8 @@ model:
 train:
   seed: 42
   batch: 64
-  epoch: 50
-  lr: 1e-5
+  epoch: 100
+  lr: 1e-4
   decay: 1e-5
   n_supervision: 16
   recursion_n: 6

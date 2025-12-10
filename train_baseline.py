@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 import os
 from dotenv import load_dotenv
 
-from model import CLIPNetwork
+from baseline_model import CLIPNetwork
 import utils
 
 
