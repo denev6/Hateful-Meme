@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 import os
 from dotenv import load_dotenv
 
-from baseline_model import CLIPNetwork
+from model import CLIPNetwork
 import utils
 
 
@@ -151,10 +151,7 @@ def validate(model, loader, criterion, processor, device, use_fp16=False):
 
     avg_loss = total_loss / len(loader)
     acc = accuracy_score(all_labels, all_preds)
-    try:
-        auc = roc_auc_score(all_labels, all_probs)
-    except ValueError:
-        auc = 0.5
+    auc = roc_auc_score(all_labels, all_probs)
 
     return avg_loss, acc, auc
 

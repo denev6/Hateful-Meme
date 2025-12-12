@@ -16,22 +16,18 @@ def deep_recursion(x, y, z, n=6, T=3):
             y, z = latent_recursion(x, y, z, n)
     # recursing once to improve y and z
     y, z = latent_recursion(x, y, z, n)
-    return (y.detach(), z.detach()), output_head(y), Q_head(y)
-    # Deep Supervision
+    return (y.detach(), z.detach()), output_head(y)
 
+# Deep Supervision
 for x_input, y_true in train_dataloader:
     y, z = y_init, z_init
     for step in range(N_supervision):
         x = input_embedding(x_input)
-        (y, z), y_hat, q_hat = deep_recursion(x, y, z)
+        (y, z), y_hat = deep_recursion(x, y, z)
         loss = softmax_cross_entropy(y_hat, y_true)
-        loss += binary_cross_entropy(q_hat, (y_hat == y_true))
         loss.backward()
         opt.step()
         opt.zero_grad()
-
-        if q_hat > 0: # early stopping
-            break
 ```
 
 ```bib
