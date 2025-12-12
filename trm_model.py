@@ -111,15 +111,15 @@ class TRMModel(nn.Module):
         )
 
         self.lm_head = CastedLinear(hidden_size, 1, bias=False)  # Binary Classification
-        # self.q_head = CastedLinear(hidden_size, 2, bias=True)  # Halting Head
+        self.q_head = CastedLinear(hidden_size, 1, bias=True)  # Halting Head
 
         self.H_init = nn.Parameter(torch.zeros(1, 1, hidden_size))
         self.L_init = nn.Parameter(torch.zeros(1, 1, hidden_size))
 
         # Q-Head(Halting) 특수 초기화
-        # with torch.no_grad():
-        # self.q_head.weight.zero_()
-        # self.q_head.bias.fill_(-5.0)
+        with torch.no_grad():
+            self.q_head.weight.zero_()
+            self.q_head.bias.fill_(-5.0)
 
     def forward_net(self, state, context):
         # state: 현재 업데이트 하려는 상태 (z 또는 y)
@@ -151,6 +151,6 @@ class TRMModel(nn.Module):
         y, z = self.latent_recursion(x, y, z, n)
 
         logits = self.lm_head(y)  # [B, 1, 1]
-        # q_logits = self.q_head(y)  # [B, 1, 2]
+        q_logits = self.q_head(y)  # [B, 1, 1]
 
-        return (y, z), logits  # , q_logits
+        return (y, z), logits, q_logits

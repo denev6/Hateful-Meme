@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from transformers import get_cosine_schedule_with_warmup
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 import wandb
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
@@ -45,14 +45,12 @@ def train(config: DictConfig):
         model.parameters(), lr=config.train.lr, weight_decay=config.train.decay
     )
     criterion = nn.BCEWithLogitsLoss()
-    # halt_criterion = nn.CrossEntropyLoss()
+    halt_criterion = nn.BCEWithLogitsLoss()
 
     N_sup = config.train.n_supervision
     total_steps = len(train_loader) * config.train.epoch * N_sup
-    scheduler = get_cosine_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=int(total_steps * 0.1),
-        num_training_steps=total_steps,
+    scheduler = CosineAnnealingLR(
+        optimizer, T_max=total_steps, eta_min=config.train.min_lr
     )
 
     best_val_acc = 0
@@ -75,14 +73,26 @@ def train(config: DictConfig):
                 combined_feats = torch.cat([text_feats, img_feats], dim=-1).float()
 
             # TRM Initialization
-            y = model.H_init.expand(config.train.batch, 1, -1).clone()
-            z = model.L_init.expand(config.train.batch, 1, -1).clone()
+            actual_batch_size = combined_feats.size(0)
+            y = model.H_init.expand(actual_batch_size, 1, -1).clone()
+            z = model.L_init.expand(actual_batch_size, 1, -1).clone()
+
+            halted_mask = torch.zeros(
+                actual_batch_size, dtype=torch.bool, device=device
+            )
+            final_pred_logits = torch.empty_like(labels)
+            last_loss = 0
+            last_pred_logits = None
 
             # Deep Supervision Loop
-            for step in range(N_sup):
-                optimizer.zero_grad()
+            for _ in range(N_sup):
+                if halted_mask.all():
+                    break
+
+                y_old, z_old = y, z
+
                 x_input = model.projection(combined_feats.to(device)).unsqueeze(1)
-                (y_next, z_next), logits = model.deep_recursion(
+                (y_next, z_next), logits, q_logits = model.deep_recursion(
                     x_input,
                     y,
                     z,
@@ -91,34 +101,43 @@ def train(config: DictConfig):
                 )
 
                 pred_logits = logits.squeeze(1)
+                last_pred_logits = pred_logits
+
                 loss_task = criterion(pred_logits, labels)
 
-                # Halting Loss (removed for simplicity)
-                # is_correct = (
-                #     ((torch.sigmoid(pred_logits) > 0.5).float() == labels)
-                #     .long()
-                #     .squeeze()
-                # )
-                # halt_target = torch.where(is_correct == 1, 0, 1).to(device)
-                # loss_halt = halt_criterion(q_logits.squeeze(1), halt_target)
+                # Halting Loss
+                is_correct = (
+                    (torch.sigmoid(pred_logits) > 0.5).float() == labels
+                ).float()
+                loss_halt = halt_criterion(q_logits.squeeze(1), is_correct)
+                loss = loss_task + loss_halt
+                last_loss = loss.item()
 
-                # loss = loss_task + 0.1 * loss_halt
-
-                loss_task.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+                loss.backward()
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
                 optimizer.step()
+                optimizer.zero_grad()
                 scheduler.step()
 
-                y = y_next.detach()
-                z = z_next.detach()
+                halt_decision = (torch.sigmoid(q_logits.squeeze(1)) > 0).squeeze(-1)
+                newly_halting_mask = halt_decision & ~halted_mask
 
-                if step == N_sup - 1:
-                    train_loss += loss_task.item()
-                    preds = torch.sigmoid(pred_logits).detach().cpu().numpy() > 0.5
-                    train_preds.extend(preds)
-                    train_labels.extend(labels.cpu().numpy())
-                    loop.set_postfix(loss=loss_task.item())
+                final_pred_logits[newly_halting_mask] = pred_logits.detach()[
+                    newly_halting_mask
+                ]
+                halted_mask.logical_or_(newly_halting_mask)
+
+                y = torch.where(halted_mask.view(-1, 1, 1), y_old, y_next.detach())
+                z = torch.where(halted_mask.view(-1, 1, 1), z_old, z_next.detach())
+
+            final_pred_logits[~halted_mask] = last_pred_logits.detach()[~halted_mask]
+
+            train_loss += last_loss
+            preds = torch.sigmoid(final_pred_logits).cpu().numpy() > 0.5
+            train_preds.extend(preds)
+            train_labels.extend(labels.cpu().numpy())
+            loop.set_postfix(loss=last_loss)
 
         train_acc = accuracy_score(train_labels, train_preds)
         avg_train_loss = train_loss / len(train_loader)
@@ -165,27 +184,43 @@ def validate(model, processor, loader, criterion, device, config):
 
         x_input = model.projection(combined_feats).unsqueeze(1)
 
-        batch_size = x_input.size(0)
-        y = model.H_init.expand(batch_size, 1, -1).clone()
-        z = model.L_init.expand(batch_size, 1, -1).clone()
+        actual_batch_size = combined_feats.size(0)
+        y = model.H_init.expand(actual_batch_size, 1, -1).clone()
+        z = model.L_init.expand(actual_batch_size, 1, -1).clone()
 
-        final_logits = None
+        final_logits = torch.empty_like(labels)
+        halted_mask = torch.zeros(actual_batch_size, dtype=torch.bool, device=device)
+        last_step_logits = None
 
-        for step in range(N_sup):
-            (y, z), logits = model.deep_recursion(
+        for _ in range(N_sup):
+            if halted_mask.all():
+                break
+
+            y_old, z_old = y, z
+
+            (y, z), logits, q_logits = model.deep_recursion(
                 x_input,
                 y,
                 z,
                 n=config.train.recursion_n,
                 T=config.train.recursion_t,
             )
+            last_step_logits = logits
 
-            if step == N_sup - 1:
-                final_logits = logits
+            halt_decision = (torch.sigmoid(q_logits.squeeze(1)) > 0.5).squeeze(-1)
+            newly_halting_mask = halt_decision & ~halted_mask
 
-        loss = criterion(final_logits.squeeze(1), labels)
+            final_logits[newly_halting_mask] = logits.squeeze(1)[newly_halting_mask]
+            halted_mask.logical_or_(newly_halting_mask)
+
+            y = torch.where(halted_mask.view(-1, 1, 1), y_old, y)
+            z = torch.where(halted_mask.view(-1, 1, 1), z_old, z)
+
+        final_logits[~halted_mask] = last_step_logits.squeeze(1)[~halted_mask]
+
+        loss = criterion(final_logits, labels)
         total_loss += loss.item()
-        probs = torch.sigmoid(final_logits.squeeze(1)).cpu().numpy()
+        probs = torch.sigmoid(final_logits).cpu().numpy()
         preds = probs > 0.5
 
         all_probs.extend(probs)
@@ -248,25 +283,42 @@ def evaluate(config: DictConfig):
 
         x_input = model.projection(combined_feats).unsqueeze(1)
 
-        y = model.H_init.expand(config.train.batch, 1, -1).clone()
-        z = model.L_init.expand(config.train.batch, 1, -1).clone()
+        actual_batch_size = combined_feats.size(0)
+        y = model.H_init.expand(actual_batch_size, 1, -1).clone()
+        z = model.L_init.expand(actual_batch_size, 1, -1).clone()
 
-        final_logits = None
+        final_logits = torch.empty_like(labels)
+        halted_mask = torch.zeros(actual_batch_size, dtype=torch.bool, device=device)
+        last_step_logits = None
 
         # Deep Supervision Loop (Inference)
-        for step in range(N_sup):
-            (y, z), logits = model.deep_recursion(
+        for _ in range(N_sup):
+            if halted_mask.all():
+                break
+
+            y_old, z_old = y, z
+
+            (y, z), logits, q_logits = model.deep_recursion(
                 x_input,
                 y,
                 z,
                 n=config.train.recursion_n,
                 T=config.train.recursion_t,
             )
+            last_step_logits = logits
 
-            if step == N_sup - 1:
-                final_logits = logits
+            halt_decision = (torch.sigmoid(q_logits.squeeze(1)) > 0.5).squeeze(-1)
+            newly_halting_mask = halt_decision & ~halted_mask
 
-        probs = torch.sigmoid(final_logits.squeeze(1)).cpu().numpy()
+            final_logits[newly_halting_mask] = logits.squeeze(1)[newly_halting_mask]
+            halted_mask.logical_or_(newly_halting_mask)
+
+            y = torch.where(halted_mask.view(-1, 1, 1), y_old, y)
+            z = torch.where(halted_mask.view(-1, 1, 1), z_old, z)
+
+        final_logits[~halted_mask] = last_step_logits.squeeze(1)[~halted_mask]
+
+        probs = torch.sigmoid(final_logits).cpu().numpy()
         preds = probs > 0.5
 
         all_probs.extend(probs)
@@ -280,8 +332,7 @@ def evaluate(config: DictConfig):
     except ValueError:
         auc = 0.0
 
-    metrics = {"Test Accuracy": acc, "Test F1": f1, "Test AUC": auc}
-    return metrics
+    return {"Accuracy": acc, "F1": f1, "AUC": auc}
 
 
 @hydra.main(config_path="config", version_base=None)
