@@ -4,14 +4,38 @@
 
 The Hateful Memes Challenge by Meta (2020): [docs](https://ai.meta.com/tools/hatefulmemes/)
 
-<img src="./assets/01329.png" alt="sample_01329" style="max-width:330px" />
-
 *Image is a compilation of assets, including ©Getty Image.*
+
+![sample_01329](./assets/01329.png)
+
+All images should be placed under the `data/img/` directory (i.e. `data/img/01329.png`).
+
+```sh
+python utils/preprocess.py
+```
 
 ## ▶️ Train
 
+Update the `.env` file and run `load_clip.py` to download CLIP for training.
+
 ```sh
-python train.py --config-name mlp
+python utils/load_clip.py
+```
+
+### Cross Attention
+
+![cross-attention](./assets/CA.png)
+
+```sh
+python train.py --config-name ca
+```
+
+### Tiny Reasoning Model
+
+![cross-attention](./assets/TRM.png)
+
+```sh
+python train_trm.py --config-name trm
 ```
 
 ## 🛠️ Experiments

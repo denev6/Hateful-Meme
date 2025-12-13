@@ -109,11 +109,7 @@ class TRMModel(nn.Module):
         self.layers = nn.ModuleList(
             [TRMBlock(hidden_size, expansion) for _ in range(num_layers)]
         )
-
         self.lm_head = CastedLinear(hidden_size, 1, bias=True)
-
-        self.H_init = nn.Parameter(torch.zeros(1, 1, hidden_size))
-        self.L_init = nn.Parameter(torch.zeros(1, 1, hidden_size))
 
     def forward_net(self, state, context):
         # state: 현재 업데이트 하려는 상태 (z 또는 y)
@@ -143,7 +139,6 @@ class TRMModel(nn.Module):
                 y, z = self.latent_recursion(x, y, z, n)
 
         y, z = self.latent_recursion(x, y, z, n)
-
         logits = self.lm_head(y)  # [B, 1, 1]
 
         return (y, z), logits

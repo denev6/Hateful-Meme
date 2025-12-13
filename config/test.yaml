@@ -8,7 +8,7 @@ train:
   batch: 64
   epoch: 50
   lr: 1e-4
-  decay: 1e-2
+  decay: 5e-2
   n_supervision: 8
-  recursion_n: 6
+  recursion_n: 3
   recursion_t: 3

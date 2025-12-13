@@ -54,7 +54,7 @@ def train(config: DictConfig):
         num_training_steps=total_steps,
     )
 
-    best_val_auc = 0.0
+    best_val_acc = 0.0
     os.makedirs("checkpoint", exist_ok=True)
 
     for epoch in range(config.train.epoch):
@@ -129,8 +129,8 @@ def train(config: DictConfig):
             }
         )
 
-        if val_auc > best_val_auc:
-            best_val_auc = val_auc
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
             torch.save(model.state_dict(), "checkpoint/best_model.pth")
 
 
