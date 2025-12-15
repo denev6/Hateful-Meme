@@ -44,11 +44,11 @@ python train_trm.py --config-name trm
 - GPU: RTX 4060 (8GB) x1
 - RAM: 32GB
 
-|Model|config|AUC|Accuracy|
-|:---:|:---:|:---:|:---:|
-|CLIP|[mlp](./config/mlp.yaml)|0.826|0.754|
-|CLIP + Cross Attention|[ca](./config/ca.yaml)|0.825|0.758|
-|CLIP + TRM|[trm](./config/trm.yaml)|0.821|0.706|
+|Model|config|AUC|Accuracy|F1|
+|:---:|:---:|:---:|:---:|:---:|
+|CLIP|[mlp](./config/mlp.yaml)|**0.826**|0.754|0.658|
+|CLIP + Cross Attention|[ca](./config/ca.yaml)|0.825|**0.758**|0.659|
+|CLIP + TRM|[trm](./config/trm.yaml)|0.819|0.727|**0.676**|
 
 Since the ground-truth labels of the original test set are not accessible, the original validation set was repurposed as the test set, and the original training set was split at an 8:2 ratio to construct the new training and validation sets  ([data](./data)).
 
