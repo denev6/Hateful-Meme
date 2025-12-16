@@ -8,36 +8,6 @@ The Hateful Memes Challenge by Meta (2020): [docs](https://ai.meta.com/tools/hat
 
 ![sample_01329](./assets/01329.png)
 
-All images should be placed under the `data/img/` directory (i.e. `data/img/01329.png`).
-
-```sh
-python utils/preprocess.py
-```
-
-## ▶️ Train
-
-Update the `.env` file and run `load_clip.py` to download CLIP for training.
-
-```sh
-python utils/load_clip.py
-```
-
-### Cross Attention
-
-![cross-attention](./assets/CA.png)
-
-```sh
-python train.py --config-name ca
-```
-
-### Tiny Reasoning Model
-
-![cross-attention](./assets/TRM.png)
-
-```sh
-python train_trm.py --config-name trm
-```
-
 ## 🛠️ Experiments
 
 - OS: Ubuntu 24.04.1 LTS
@@ -66,3 +36,33 @@ Check [the-results](https://www.drivendata.org/competitions/64/hateful-memes/#th
 |UNITER (#4)|0.791|-|
 
 Since the original validation set was used as the test set for evaluation, the performance of the comparison models are also recorded based on their validation set scores.
+
+## ▶️ Train
+
+All images should be placed under the `data/img/` directory (e.g. `data/img/01329.png`).
+
+Generate the `.env` file based on `.env.example`.
+
+```sh
+pip install -r requirements.txt
+python utils/load_clip.py
+python utils/preprocess.py
+```
+
+### Cross Attention
+
+![cross-attention](./assets/CA.png)
+
+```sh
+python train.py --config-name ca
+```
+
+### Tiny Reasoning Model
+
+![TRM](./assets/TRM.png)
+
+```sh
+python train_trm.py --config-name trm
+```
+
+Check [trm_pseudo](./assets/trm_pseudo.md) for more details.
