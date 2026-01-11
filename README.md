@@ -66,3 +66,8 @@ python train_trm.py --config-name trm
 ```
 
 Check [trm_pseudo](./assets/trm_pseudo.md) for more details.
+
+## 📋 Docs
+
+- Korean: [Tech Blog](https://denev6.github.io/posts/multimodal-trm/)
+- English: [Academic Format](/assets/experiments.pdf)
